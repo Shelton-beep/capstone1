@@ -52,9 +52,11 @@ async def root():
         "version": "1.0.0",
         "endpoints": {
             "predict": "/api/predict/",
+            "predict_stream": "/api/predict/stream",
             "similar": "/api/similar/",
             "rag": "/api/rag/",
-            "brief": "/api/brief/"
+            "brief": "/api/brief/",
+            "brief_stream": "/api/brief/stream"
         }
     }
 

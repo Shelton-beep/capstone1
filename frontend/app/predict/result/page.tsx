@@ -35,6 +35,33 @@ import { Input } from "@/app/components/ui/input";
 import { Textarea } from "@/app/components/ui/textarea";
 import { predictCase } from "@/lib/api";
 
+// Helper function to calculate brief generation progress width
+function getBriefProgressWidth(step: string): string {
+  const stepProgress: Record<string, number> = {
+    "validation": 10,
+    "preparing": 20,
+    "filtering_precedents": 40,
+    "generating": 80,
+  }
+  return `${stepProgress[step] || 0}%`
+}
+
+// Helper function to calculate simulation progress width
+function getSimulationProgressWidth(step: string): string {
+  const stepProgress: Record<string, number> = {
+    "validation": 10,
+    "extracting_facts": 25,
+    "generating_embeddings": 40,
+    "predicting": 55,
+    "calculating_probabilities": 65,
+    "extracting_features": 75,
+    "calculating_likelihoods": 85,
+    "determining_judgment": 90,
+    "generating_explanation": 95,
+  }
+  return `${stepProgress[step] || 0}%`
+}
+
 export default function ResultPage() {
   const router = useRouter();
   const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
@@ -64,6 +91,10 @@ export default function ResultPage() {
   const [improvingBrief, setImprovingBrief] = useState(false);
   const [simulatingPrediction, setSimulatingPrediction] = useState(false);
   const [briefPrediction, setBriefPrediction] = useState<PredictionResponse | null>(null);
+  const [briefProgress, setBriefProgress] = useState<string>("");
+  const [briefProgressStep, setBriefProgressStep] = useState<string>("");
+  const [simulationProgress, setSimulationProgress] = useState<string>("");
+  const [simulationProgressStep, setSimulationProgressStep] = useState<string>("");
 
   useEffect(() => {
     // Get prediction result from sessionStorage
@@ -672,6 +703,9 @@ export default function ResultPage() {
                           }
                           setGeneratingBrief(true);
                           setBriefDialogOpen(true);
+                          setBriefPrediction(null);
+                          setBriefProgress("");
+                          setBriefProgressStep("");
                           try {
                             // Filter similar cases to only include winning ones
                             const winningCases = similarCases?.similar_cases.filter(
@@ -682,7 +716,15 @@ export default function ResultPage() {
                               prediction.extracted_facts,
                               winningCases.length > 0 ? winningCases : undefined,
                               originalInputs?.nature_of_suit,
-                              prediction.legal_judgment
+                              prediction.legal_judgment,
+                              undefined,
+                              undefined,
+                              (update) => {
+                                if (update.type === "progress") {
+                                  setBriefProgress(update.message || "");
+                                  setBriefProgressStep(update.step || "");
+                                }
+                              }
                             );
                             setLegalBrief(briefResult.brief);
                             setBriefCitations(briefResult.case_citations);
@@ -691,6 +733,8 @@ export default function ResultPage() {
                             setLegalBrief("Failed to generate brief. Please try again.");
                           } finally {
                             setGeneratingBrief(false);
+                            setBriefProgress("");
+                            setBriefProgressStep("");
                           }
                         }}
                         disabled={generatingBrief || !prediction.extracted_facts || prediction.extracted_facts.length === 0}
@@ -725,6 +769,8 @@ export default function ResultPage() {
                                 onClick={async () => {
                                   if (!legalBrief) return;
                                   setSimulatingPrediction(true);
+                                  setSimulationProgress("");
+                                  setSimulationProgressStep("");
                                   try {
                                     // Use the legal brief text to predict outcome
                                     const briefPredictionResult = await predictCase(
@@ -732,7 +778,14 @@ export default function ResultPage() {
                                       originalInputs?.court,
                                       originalInputs?.jurisdiction,
                                       originalInputs?.nature_of_suit,
-                                      originalInputs?.year
+                                      originalInputs?.year,
+                                      undefined,
+                                      (update) => {
+                                        if (update.type === "progress") {
+                                          setSimulationProgress(update.message || "");
+                                          setSimulationProgressStep(update.step || "");
+                                        }
+                                      }
                                     );
                                     setBriefPrediction(briefPredictionResult);
                                   } catch (err) {
@@ -740,6 +793,8 @@ export default function ResultPage() {
                                     alert("Failed to simulate prediction. Please try again.");
                                   } finally {
                                     setSimulatingPrediction(false);
+                                    setSimulationProgress("");
+                                    setSimulationProgressStep("");
                                   }
                                 }}
                                 disabled={simulatingPrediction}
@@ -791,14 +846,33 @@ export default function ResultPage() {
                         </div>
                       </DialogHeader>
                       <div className="space-y-4">
-                        {generatingBrief || improvingBrief ? (
-                          <div className="flex items-center justify-center py-8">
-                            <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                            <p className="text-sm text-muted-foreground">
-                              {improvingBrief ? "Improving legal brief..." : "Generating legal brief..."}
-                            </p>
-                          </div>
-                        ) : legalBrief ? (
+                                    {generatingBrief || improvingBrief ? (
+                                      <div className="space-y-4">
+                                        <div className="bg-muted p-4 rounded-lg border border-primary/20">
+                                          <div className="flex items-center gap-3 mb-2">
+                                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+                                            <div className="flex-1">
+                                              <p className="text-sm font-medium text-foreground">
+                                                {briefProgress || (improvingBrief ? "Improving legal brief..." : "Generating legal brief...")}
+                                              </p>
+                                              {briefProgressStep && (
+                                                <p className="text-xs text-muted-foreground mt-1 capitalize">
+                                                  {briefProgressStep.replace(/_/g, " ")}
+                                                </p>
+                                              )}
+                                            </div>
+                                          </div>
+                                          <div className="w-full bg-background rounded-full h-2 overflow-hidden">
+                                            <div 
+                                              className="h-full bg-primary transition-all duration-300 ease-out"
+                                              style={{
+                                                width: getBriefProgressWidth(briefProgressStep)
+                                              }}
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ) : legalBrief ? (
                           <>
                             {/* Simulation Results */}
                             {briefPrediction && (
@@ -946,9 +1020,28 @@ export default function ResultPage() {
                             
                             {/* Simulating indicator */}
                             {simulatingPrediction && (
-                              <div className="flex items-center justify-center py-4 bg-muted rounded-lg">
-                                <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                                <p className="text-sm text-muted-foreground">Analyzing brief and simulating prediction...</p>
+                              <div className="bg-muted p-4 rounded-lg border border-primary/20">
+                                <div className="flex items-center gap-3 mb-2">
+                                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+                                  <div className="flex-1">
+                                    <p className="text-sm font-medium text-foreground">
+                                      {simulationProgress || "Analyzing brief and simulating prediction..."}
+                                    </p>
+                                    {simulationProgressStep && (
+                                      <p className="text-xs text-muted-foreground mt-1 capitalize">
+                                        {simulationProgressStep.replace(/_/g, " ")}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="w-full bg-background rounded-full h-2 overflow-hidden">
+                                  <div 
+                                    className="h-full bg-primary transition-all duration-300 ease-out"
+                                    style={{
+                                      width: getSimulationProgressWidth(simulationProgressStep)
+                                    }}
+                                  />
+                                </div>
                               </div>
                             )}
                             

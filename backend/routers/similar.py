@@ -9,6 +9,7 @@ import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
 from utils.embedding import encode_text
 from utils.model_loader import load_embeddings, load_dataset
+from utils.input_validation import is_valid_legal_text
 
 router = APIRouter(prefix="/api/similar", tags=["similar"])
 
@@ -55,10 +56,19 @@ async def find_similar_cases(request: SimilarRequest):
         if request.facts and len(request.facts) > 0:
             # Combine facts into a query text
             query_text = "\n".join([f"- {fact}" for fact in request.facts])
+            # Validate facts-based query
+            text_valid, validation_error = is_valid_legal_text(query_text, min_length=30)
+            if not text_valid:
+                raise HTTPException(status_code=400, detail=validation_error)
         else:
             query_text = request.text.strip()
             if len(query_text) == 0:
                 raise HTTPException(status_code=400, detail="Text cannot be empty")
+            
+            # Validate that text is meaningful legal content
+            text_valid, validation_error = is_valid_legal_text(query_text)
+            if not text_valid:
+                raise HTTPException(status_code=400, detail=validation_error)
         
         if len(query_text) > 50000:
             raise HTTPException(status_code=400, detail="Text exceeds maximum length of 50,000 characters")

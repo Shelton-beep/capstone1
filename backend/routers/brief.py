@@ -3,11 +3,44 @@ Legal brief generation router.
 Generates compelling legal arguments based on case facts and similar precedents.
 """
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import os
+import json
+import asyncio
 
 router = APIRouter(prefix="/api/brief", tags=["brief"])
+
+
+def _send_progress(step: str, message: str, data: dict = None):
+    """Helper to format progress updates for SSE."""
+    payload = {
+        "type": "progress",
+        "step": step,
+        "message": message
+    }
+    if data:
+        payload["data"] = data
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+def _send_result(result: dict):
+    """Helper to send final result."""
+    payload = {
+        "type": "result",
+        "data": result
+    }
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+def _send_error(error: str):
+    """Helper to send error."""
+    payload = {
+        "type": "error",
+        "message": error
+    }
+    return f"data: {json.dumps(payload)}\n\n"
 
 
 class BriefRequest(BaseModel):
@@ -190,6 +223,104 @@ Structure the brief with clear sections:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Brief generation failed: {str(e)}")
+
+
+def _stream_brief_generation(request: BriefRequest):
+    """Stream brief generation process with progress updates."""
+    try:
+        # Validation
+        yield _send_progress("validation", "Validating brief request...")
+        
+        if not request.facts or len(request.facts) == 0:
+            yield _send_error("Facts are required")
+            return
+        
+        # Determine operation type
+        is_improvement = request.improvement_instructions and request.existing_brief
+        
+        if is_improvement:
+            yield _send_progress("preparing", "Preparing to improve legal brief...")
+        else:
+            yield _send_progress("preparing", "Preparing to generate legal brief...")
+        
+        # Filter winning precedents
+        yield _send_progress("filtering_precedents", "Filtering relevant precedents...")
+        winning_precedents = []
+        case_citations = []
+        
+        if request.similar_cases:
+            for case in request.similar_cases:
+                if case.get('outcome') == 'win':
+                    winning_precedents.append(case)
+                    case_name = case.get('case_name', 'Unknown Case')
+                    original_outcome = case.get('original_outcome', '')
+                    if case_name != 'Unknown Case':
+                        citation = f"{case_name}"
+                        if original_outcome:
+                            citation += f" ({original_outcome})"
+                        case_citations.append(citation)
+        
+        yield _send_progress("filtering_precedents", f"Found {len(winning_precedents)} relevant precedents", {
+            "precedents_count": len(winning_precedents)
+        })
+        
+        # Generate brief
+        if is_improvement:
+            yield _send_progress("generating", "Improving legal brief based on your instructions...")
+        else:
+            yield _send_progress("generating", "Generating compelling legal brief...")
+        
+        brief, citations = generate_legal_brief(
+            facts=request.facts,
+            similar_cases=request.similar_cases,
+            nature_of_suit=request.nature_of_suit,
+            legal_judgment=request.legal_judgment,
+            improvement_instructions=request.improvement_instructions,
+            existing_brief=request.existing_brief
+        )
+        
+        yield _send_progress("generating", "Brief generation completed")
+        
+        # Final result
+        result = {
+            "brief": brief,
+            "case_citations": citations
+        }
+        yield _send_result(result)
+        
+    except HTTPException as e:
+        yield _send_error(e.detail)
+    except Exception as e:
+        yield _send_error(f"Brief generation error: {str(e)}")
+
+
+@router.post("/stream")
+async def generate_brief_stream(request: BriefRequest):
+    """
+    Stream brief generation process with real-time progress updates.
+    Uses Server-Sent Events (SSE) to send progress updates as brief is generated.
+    
+    Returns:
+        StreamingResponse with SSE events containing:
+        - progress: Step-by-step progress updates
+        - result: Final brief and citations
+        - error: Error message if something fails
+    """
+    async def async_generator():
+        """Convert sync generator to async generator for FastAPI StreamingResponse."""
+        for item in _stream_brief_generation(request):
+            yield item
+            await asyncio.sleep(0.01)
+    
+    return StreamingResponse(
+        async_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 
 @router.post("/", response_model=BriefResponse)

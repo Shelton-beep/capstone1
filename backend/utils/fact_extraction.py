@@ -18,6 +18,18 @@ def extract_case_facts(text: str, nature_of_suit: Optional[str] = None) -> List[
     Returns:
         List of extracted case facts as strings
     """
+    # Validate input text before extracting facts
+    try:
+        from utils.input_validation import is_valid_legal_text
+        text_valid, validation_error = is_valid_legal_text(text, min_length=30)
+        if not text_valid:
+            print(f"Warning: Invalid input text for fact extraction: {validation_error}")
+            # Return empty list instead of extracting invalid facts
+            return []
+    except ImportError:
+        # If validation module not available, continue (shouldn't happen)
+        pass
+    
     try:
         from openai import OpenAI
         from dotenv import load_dotenv
@@ -30,9 +42,17 @@ def extract_case_facts(text: str, nature_of_suit: Optional[str] = None) -> List[
             # Also check for common typos
             api_key = os.getenv("OPEN_API_KEY") or os.getenv("OPENAI_KEY")
             if not api_key:
-                # Fallback to simple extraction if GPT is not available
-                print("Warning: OPENAI_API_KEY not set, using fallback fact extraction")
+                # Don't use fallback if text is invalid - return empty list
+                print("Warning: OPENAI_API_KEY not set")
                 print(f"Available env vars with 'OPEN': {[k for k in os.environ.keys() if 'OPEN' in k.upper()]}")
+                # Check if text is valid before using fallback
+                try:
+                    from utils.input_validation import is_valid_legal_text
+                    if not is_valid_legal_text(text, min_length=30)[0]:
+                        print("Text is invalid, returning empty list instead of fallback extraction")
+                        return []
+                except ImportError:
+                    pass
                 return extract_case_facts_simple(text, nature_of_suit)
             else:
                 print(f"Warning: Found API key with alternative name, using it")
@@ -56,18 +76,24 @@ Return ONLY a bulleted list of facts, one fact per line, starting with "- ".
 Be concise but specific. Extract 5-10 key facts that are relevant to the appeal outcome."""
 
         if nature_of_suit:
-            context += f"\n\nNature of suit: {nature_of_suit}. Consider this when extracting relevant facts."
+            context += f"\n\nNature of suit: {nature_of_suit}. Consider this when extracting relevant facts, BUT ONLY extract facts that are actually present in the legal case text below. Do NOT invent facts based solely on the nature of suit."
 
         user_prompt = f"""{context}
 
 Legal case text:
 {text[:8000]}"""  # Limit to 8000 chars to avoid token limits
 
+        # Additional validation: If text is too short or doesn't contain legal content, don't call GPT
+        # This prevents GPT from hallucinating facts based on nature_of_suit alone
+        if len(text.strip()) < 30:
+            print(f"Warning: Text too short ({len(text.strip())} chars) for fact extraction, returning empty list")
+            return []
+
         try:
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "You are a legal assistant that extracts key factual elements from legal case texts, specifically for APPEAL cases. Focus on facts relevant to the appeal outcome. Return only the facts in bullet format, one fact per line starting with '- '."},
+                    {"role": "system", "content": "You are a legal assistant that extracts key factual elements from legal case texts, specifically for APPEAL cases. Focus on facts relevant to the appeal outcome. Return only the facts in bullet format, one fact per line starting with '- '. IMPORTANT: Only extract facts that are explicitly stated in the legal case text provided. Do NOT invent or assume facts based on the nature of suit alone. If the text is too short, nonsensical, or doesn't contain meaningful legal content, return an empty list or 'No facts could be extracted from the provided text.'"},
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.3,
@@ -78,7 +104,8 @@ Legal case text:
             print(f"GPT response received, length: {len(facts_text)}")
         except Exception as gpt_error:
             print(f"GPT API call failed: {gpt_error}")
-            return extract_case_facts_simple(text, nature_of_suit)
+            # Don't fall back to simple extraction if text is invalid - return empty list
+            return []
         
         # Parse bullet points into list
         facts = []
@@ -96,12 +123,22 @@ Legal case text:
                 if fact:
                     facts.append(fact)
         
+        # Validate extracted facts - if text was invalid, don't return hallucinated facts
         if facts:
+            # Double-check: if original text was invalid, don't return facts
+            try:
+                from utils.input_validation import is_valid_legal_text
+                if not is_valid_legal_text(text, min_length=30)[0]:
+                    print("Warning: Text was invalid, discarding extracted facts to prevent hallucination")
+                    return []
+            except ImportError:
+                pass  # If validation not available, proceed with facts
+            
             return facts[:10]  # Limit to 10 facts max
         else:
-            # If parsing failed, fall back to simple extraction
-            print("Warning: GPT fact extraction returned no parseable facts, using fallback")
-            return extract_case_facts_simple(text, nature_of_suit)
+            # If parsing failed, don't fall back - return empty list
+            print("Warning: GPT fact extraction returned no parseable facts")
+            return []
         
     except ImportError:
         print("Warning: OpenAI library not installed, using fallback fact extraction")

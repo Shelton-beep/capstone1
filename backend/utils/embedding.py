@@ -58,6 +58,20 @@ def encode_text(text: str) -> list:
     if len(text) > max_length:
         raise ValueError(f"Text exceeds maximum length of {max_length} characters")
     
+    # Validate that text is meaningful legal content
+    # This is a critical check - even if validation was bypassed earlier,
+    # we must ensure we don't generate embeddings for nonsensical input
+    try:
+        from utils.input_validation import is_valid_legal_text
+        text_valid, validation_error = is_valid_legal_text(text, min_length=30)
+        if not text_valid:
+            raise ValueError(validation_error)
+    except ImportError:
+        # If validation module not available, log warning but continue
+        # (shouldn't happen in production, but handle gracefully)
+        import warnings
+        warnings.warn("Input validation module not available, skipping validation check")
+    
     try:
         model = get_embedding_model()
         embedding = model.encode([text], batch_size=1, show_progress_bar=False)
@@ -90,8 +104,16 @@ def encode_texts(texts: list, batch_size: int = 8) -> list:
     if not isinstance(batch_size, int) or batch_size < 1 or batch_size > 32:
         raise ValueError("batch_size must be an integer between 1 and 32")
     
-    # Validate each text
+    # Validate each text - including semantic validation
     validated_texts = []
+    try:
+        from utils.input_validation import is_valid_legal_text
+        use_semantic_validation = True
+    except ImportError:
+        use_semantic_validation = False
+        import warnings
+        warnings.warn("Input validation module not available, skipping semantic validation")
+    
     for i, text in enumerate(texts):
         if not isinstance(text, str):
             raise ValueError(f"Text at index {i} must be a string")
@@ -100,6 +122,13 @@ def encode_texts(texts: list, batch_size: int = 8) -> list:
             raise ValueError(f"Text at index {i} cannot be empty")
         if len(text) > 10000:
             raise ValueError(f"Text at index {i} exceeds maximum length")
+        
+        # Semantic validation for each text
+        if use_semantic_validation:
+            text_valid, validation_error = is_valid_legal_text(text, min_length=30)
+            if not text_valid:
+                raise ValueError(f"Text at index {i} is invalid: {validation_error}")
+        
         validated_texts.append(text)
     
     try:

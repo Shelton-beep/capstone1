@@ -9,6 +9,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/app
 import { predictCase } from "@/lib/api"
 import { useRouter } from "next/navigation"
 
+// Helper function to calculate progress width based on step
+function getProgressWidth(step: string): string {
+  const stepProgress: Record<string, number> = {
+    "validation": 10,
+    "extracting_facts": 25,
+    "generating_embeddings": 40,
+    "predicting": 55,
+    "calculating_probabilities": 65,
+    "extracting_features": 75,
+    "calculating_likelihoods": 85,
+    "determining_judgment": 90,
+    "generating_explanation": 95,
+  }
+  return `${stepProgress[step] || 0}%`
+}
+
 export function Form() {
   const [text, setText] = useState("")
   const [court, setCourt] = useState("")
@@ -17,12 +33,16 @@ export function Form() {
   const [year, setYear] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState<string>("")
+  const [progressStep, setProgressStep] = useState<string>("")
   const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     setLoading(true)
+    setProgress("")
+    setProgressStep("")
 
     try {
       const result = await predictCase(
@@ -30,7 +50,15 @@ export function Form() {
         court || undefined,
         jurisdiction || undefined,
         natureOfSuit || undefined,
-        year ? parseInt(year) : undefined
+        year ? parseInt(year) : undefined,
+        undefined,
+        (update) => {
+          // Handle progress updates
+          if (update.type === "progress") {
+            setProgress(update.message || "")
+            setProgressStep(update.step || "")
+          }
+        }
       )
       // Store result and original inputs in sessionStorage for result page
       sessionStorage.setItem("predictionResult", JSON.stringify(result))
@@ -43,7 +71,18 @@ export function Form() {
       }))
       router.push("/predict/result")
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred")
+      // Display user-friendly error messages
+      const errorMessage = err instanceof Error ? err.message : "An error occurred"
+      setError(errorMessage)
+      setProgress("")
+      setProgressStep("")
+      // Scroll to error for better UX
+      setTimeout(() => {
+        const errorElement = document.getElementById("error-message")
+        if (errorElement) {
+          errorElement.scrollIntoView({ behavior: "smooth", block: "center" })
+        }
+      }, 100)
     } finally {
       setLoading(false)
     }
@@ -127,8 +166,32 @@ export function Form() {
           </div>
 
           {error && (
-            <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
-              {error}
+            <div id="error-message" className="text-sm text-destructive bg-destructive/10 p-3 rounded-md border border-destructive/20">
+              <strong>Error:</strong> {error}
+            </div>
+          )}
+
+          {loading && progress && (
+            <div className="bg-muted p-4 rounded-lg border border-primary/20">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-foreground">{progress}</p>
+                  {progressStep && (
+                    <p className="text-xs text-muted-foreground mt-1 capitalize">
+                      {progressStep.replace(/_/g, " ")}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="w-full bg-background rounded-full h-2 overflow-hidden">
+                <div 
+                  className="h-full bg-primary transition-all duration-300 ease-out"
+                  style={{
+                    width: getProgressWidth(progressStep)
+                  }}
+                />
+              </div>
             </div>
           )}
 
