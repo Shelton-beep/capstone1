@@ -145,17 +145,43 @@ def _stream_prediction(request: PredictionRequest):
             yield _send_error(f"Prediction failed: {str(e)}")
             return
 
-        # Step 5: Get probabilities
+        # Step 5: Get probabilities with calibration
         yield _send_progress("calculating_probabilities", "Calculating outcome probabilities...")
         try:
             model = load_model()
             if len(embedding_array.shape) == 1:
                 embedding_array = embedding_array.reshape(1, -1)
             probabilities = model.predict_proba(embedding_array)[0]
-            probability = float(
-                probabilities[1] if label == 'win' else probabilities[0])
+            # Always use probability of 'win' (class 1) for defendant's perspective
+            # LabelEncoder assigns: 0='lose', 1='win' (alphabetically)
+            win_probability = float(probabilities[1])
+
+            # Apply calibration based on text length
+            # Training data shows win cases are much longer (avg 1731 chars) than lose cases (avg 106 chars)
+            # Short argumentative texts may get overconfident predictions
+            from utils.model_loader import calibrate_probability_for_text_length
+            text_length = len(text)
+            calibrated_prob, is_uncertain = calibrate_probability_for_text_length(
+                win_probability, text_length, label
+            )
+
+            # Use calibrated probability
+            win_probability = calibrated_prob
+
+            # Re-determine label based on calibrated probability threshold (50%)
+            # This ensures consistency: if win_probability < 50%, defendant loses
+            if win_probability >= 0.5:
+                label = 'win'
+            else:
+                label = 'lose'
+            probability = win_probability
+
+            # Update confidence to match calibrated probability
+            confidence = probability
+
             yield _send_progress("calculating_probabilities", "Probabilities calculated", {
-                "probability": probability
+                "probability": probability,
+                "confidence": confidence
             })
         except Exception as e:
             yield _send_error(f"Probability calculation failed: {str(e)}")
@@ -373,14 +399,38 @@ async def predict_case_outcome(request: PredictionRequest):
             raise HTTPException(
                 status_code=500, detail=f"Prediction failed: {str(e)}")
 
-        # Get probabilities
+        # Get probabilities with calibration
         try:
             model = load_model()
             if len(embedding_array.shape) == 1:
                 embedding_array = embedding_array.reshape(1, -1)
             probabilities = model.predict_proba(embedding_array)[0]
-            probability = float(
-                probabilities[1] if label == 'win' else probabilities[0])
+            # Always use probability of 'win' (class 1) for defendant's perspective
+            # LabelEncoder assigns: 0='lose', 1='win' (alphabetically)
+            win_probability = float(probabilities[1])
+
+            # Apply calibration based on text length
+            # Training data shows win cases are much longer (avg 1731 chars) than lose cases (avg 106 chars)
+            # Short argumentative texts may get overconfident predictions
+            from utils.model_loader import calibrate_probability_for_text_length
+            text_length = len(text)
+            calibrated_prob, is_uncertain = calibrate_probability_for_text_length(
+                win_probability, text_length, label
+            )
+
+            # Use calibrated probability
+            win_probability = calibrated_prob
+
+            # Re-determine label based on calibrated probability threshold (50%)
+            # This ensures consistency: if win_probability < 50%, defendant loses
+            if win_probability >= 0.5:
+                label = 'win'
+            else:
+                label = 'lose'
+            probability = win_probability
+
+            # Update confidence to match calibrated probability
+            confidence = probability
         except Exception as e:
             raise HTTPException(
                 status_code=500, detail=f"Probability calculation failed: {str(e)}")

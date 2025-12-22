@@ -59,6 +59,79 @@ def load_dataset():
         _dataset = pd.read_csv(dataset_path)
     return _dataset
 
+def calibrate_probability_for_text_length(
+    win_probability: float, 
+    text_length: int,
+    predicted_label: str
+) -> Tuple[float, bool]:
+    """
+    Calibrate probability based on text length and confidence level to account for training data distribution.
+    
+    Training data shows:
+    - Win cases: avg 1731 chars, median 272 chars
+    - Lose cases: avg 106 chars, median 65 chars
+    
+    Issues addressed:
+    1. Short texts (< 500 chars) predicting "win" with high confidence may be overconfident
+    2. Very high confidence (>95%) predictions are unrealistic - no case is 100% certain
+    3. Legal briefs (2000+ chars) can still get overconfident predictions
+    
+    Args:
+        win_probability: Raw win probability from model (0-1)
+        text_length: Length of input text in characters
+        predicted_label: Predicted label ('win' or 'lose')
+        
+    Returns:
+        Tuple of (calibrated_probability, is_uncertain)
+        - calibrated_probability: Adjusted probability accounting for text length and confidence
+        - is_uncertain: True if prediction should be treated with caution
+    """
+    # Thresholds based on training data analysis
+    SHORT_TEXT_THRESHOLD = 500  # Below this, texts are considered short
+    VERY_SHORT_THRESHOLD = 200  # Below this, texts are very short
+    MAX_REALISTIC_CONFIDENCE = 0.95  # Cap on maximum realistic confidence (95%)
+    
+    # Cap extremely high confidence predictions (>95%) regardless of text length
+    # No legal case prediction should be 100% certain
+    if win_probability > MAX_REALISTIC_CONFIDENCE:
+        # Apply gradual reduction for very high confidence
+        # 99% -> 92%, 98% -> 90%, 97% -> 88%, 96% -> 86%, 95%+ -> 95%
+        excess = win_probability - MAX_REALISTIC_CONFIDENCE
+        reduction = excess * 0.7  # Reduce excess confidence by 70%
+        win_probability = MAX_REALISTIC_CONFIDENCE + excess * 0.3
+    
+    # If predicting "win" on short text with high confidence, reduce confidence further
+    if predicted_label == 'win' and text_length < SHORT_TEXT_THRESHOLD:
+        # Calculate reduction factor based on how short the text is
+        if text_length < VERY_SHORT_THRESHOLD:
+            # Very short texts: significant reduction
+            reduction_factor = 0.3  # Reduce confidence by 70%
+        elif text_length < SHORT_TEXT_THRESHOLD:
+            # Short texts: moderate reduction
+            reduction_factor = 0.5  # Reduce confidence by 50%
+        else:
+            reduction_factor = 1.0
+        
+        # Apply reduction, but keep it above 0.5 if originally above threshold
+        if win_probability > 0.9:
+            # For very high confidence on short texts, reduce more aggressively
+            calibrated = 0.5 + (win_probability - 0.5) * reduction_factor
+        else:
+            calibrated = win_probability * reduction_factor + (1 - reduction_factor) * 0.5
+        
+        # Clamp to reasonable range
+        calibrated = max(0.5, min(calibrated, win_probability))
+        
+        # Mark as uncertain if original confidence was very high but text is short
+        is_uncertain = win_probability > 0.85 and text_length < SHORT_TEXT_THRESHOLD
+        
+        return calibrated, is_uncertain
+    
+    # For "lose" predictions or longer texts, return calibrated probability (may have been capped)
+    is_uncertain = win_probability > 0.90  # Mark high confidence as uncertain
+    return win_probability, is_uncertain
+
+
 def predict_outcome(embedding: np.ndarray) -> Tuple[str, float]:
     """
     Predict outcome for a given embedding.
@@ -68,6 +141,8 @@ def predict_outcome(embedding: np.ndarray) -> Tuple[str, float]:
         
     Returns:
         Tuple of (predicted_label, confidence_score)
+        Note: This returns raw model confidence. For calibrated probabilities,
+        use calibrate_probability_for_text_length() separately.
     """
     model = load_model()
     label_encoder = load_label_encoder()

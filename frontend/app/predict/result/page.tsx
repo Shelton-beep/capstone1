@@ -884,23 +884,14 @@ export default function ResultPage() {
                                   </CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-4">
-                                  {/* Helper function to get defendant probability */}
                                   {(() => {
-                                    // Get defendant's probability from each prediction
-                                    // If prediction is "Judgment in Favor of Defendant", use probability directly
-                                    // If prediction is "Judgment in Favor of Plaintiff/Government", use 1 - probability
-                                    const getDefendantProbability = (pred: PredictionResponse): number => {
-                                      if (pred.legal_judgment.includes("Defendant")) {
-                                        return pred.probability;
-                                      } else {
-                                        // If it's for Plaintiff/Government, defendant's chance is inverse
-                                        return 1 - pred.probability;
-                                      }
-                                    };
-                                    
-                                    const originalDefendantProb = getDefendantProbability(prediction);
-                                    const briefDefendantProb = getDefendantProbability(briefPrediction);
+                                    // probability already represents defendant's chance of winning (from backend fix)
+                                    // No conversion needed - probability is always from defendant's perspective
+                                    const originalDefendantProb = prediction.probability;
+                                    const briefDefendantProb = briefPrediction.probability;
                                     const improvement = briefDefendantProb - originalDefendantProb;
+                                    const predictionFlipped = (originalDefendantProb < 0.5 && briefDefendantProb >= 0.5) ||
+                                                             (originalDefendantProb >= 0.5 && briefDefendantProb < 0.5);
                                     
                                     return (
                                       <>
@@ -910,9 +901,6 @@ export default function ResultPage() {
                                             <p className="text-sm font-semibold text-muted-foreground">Original Prediction</p>
                                             <div className="p-3 bg-muted rounded-lg">
                                               <p className="text-sm font-bold">{prediction.legal_judgment}</p>
-                                              <p className="text-xs text-muted-foreground mt-1">
-                                                {(prediction.probability * 100).toFixed(1)}% probability ({prediction.legal_judgment.includes("Defendant") ? "Defendant" : "Plaintiff/Government"})
-                                              </p>
                                               <p className="text-xs text-muted-foreground mt-1 font-semibold">
                                                 Defendant's chance: {(originalDefendantProb * 100).toFixed(1)}%
                                               </p>
@@ -925,9 +913,6 @@ export default function ResultPage() {
                                             <p className="text-sm font-semibold text-muted-foreground">Brief-Based Prediction</p>
                                             <div className="p-3 bg-primary/10 rounded-lg border-2 border-primary/30">
                                               <p className="text-sm font-bold">{briefPrediction.legal_judgment}</p>
-                                              <p className="text-xs text-muted-foreground mt-1">
-                                                {(briefPrediction.probability * 100).toFixed(1)}% probability ({briefPrediction.legal_judgment.includes("Defendant") ? "Defendant" : "Plaintiff/Government"})
-                                              </p>
                                               <p className="text-xs text-muted-foreground mt-1 font-semibold">
                                                 Defendant's chance: {(briefDefendantProb * 100).toFixed(1)}%
                                               </p>
@@ -941,19 +926,25 @@ export default function ResultPage() {
                                         {/* Change Analysis */}
                                         <div className="p-4 bg-muted rounded-lg">
                                           <h4 className="font-semibold mb-2 text-sm">Change Analysis (From Defendant's Perspective)</h4>
-                                          {improvement > 0.01 ? (
+                                          {predictionFlipped ? (
+                                            <div className="space-y-2">
+                                              <p className="text-sm text-green-600 font-semibold">
+                                                🎉 Prediction Flipped!
+                                              </p>
+                                              <p className="text-xs text-muted-foreground">
+                                                The legal brief has successfully shifted the predicted outcome from unfavorable to favorable for the defendant/appellant.
+                                                Defendant's chances increased by +{(improvement * 100).toFixed(1)}% (from {(originalDefendantProb * 100).toFixed(1)}% to {(briefDefendantProb * 100).toFixed(1)}%).
+                                              </p>
+                                            </div>
+                                          ) : improvement > 0.01 ? (
                                             <div className="space-y-2">
                                               <p className="text-sm text-green-600 font-semibold">
                                                 ↑ Improvement: +{(improvement * 100).toFixed(1)}% increase in Defendant's chances
                                               </p>
                                               <p className="text-xs text-muted-foreground">
-                                                The legal brief significantly strengthens your case, increasing the likelihood of a favorable outcome for the defendant/appellant from {(originalDefendantProb * 100).toFixed(1)}% to {(briefDefendantProb * 100).toFixed(1)}%.
+                                                The legal brief strengthens your case, increasing the likelihood of a favorable outcome for the defendant/appellant.
+                                                Defendant's chances increased from {(originalDefendantProb * 100).toFixed(1)}% to {(briefDefendantProb * 100).toFixed(1)}%.
                                               </p>
-                                              {originalDefendantProb < 0.5 && briefDefendantProb >= 0.5 && (
-                                                <p className="text-xs text-green-600 font-semibold mt-2">
-                                                  🎯 The brief has flipped the prediction in your favor!
-                                                </p>
-                                              )}
                                             </div>
                                           ) : improvement < -0.01 ? (
                                             <div className="space-y-2">
@@ -961,7 +952,8 @@ export default function ResultPage() {
                                                 ↓ Decrease: {(improvement * 100).toFixed(1)}% decrease in Defendant's chances
                                               </p>
                                               <p className="text-xs text-muted-foreground">
-                                                Consider refining the brief to better align with successful appeal arguments. Defendant's chances decreased from {(originalDefendantProb * 100).toFixed(1)}% to {(briefDefendantProb * 100).toFixed(1)}%.
+                                                Consider refining the brief to better align with successful appeal arguments.
+                                                Defendant's chances decreased from {(originalDefendantProb * 100).toFixed(1)}% to {(briefDefendantProb * 100).toFixed(1)}%.
                                               </p>
                                             </div>
                                           ) : (
@@ -971,6 +963,7 @@ export default function ResultPage() {
                                               </p>
                                               <p className="text-xs text-muted-foreground">
                                                 The brief maintains similar prediction strength. Consider adding stronger arguments or emphasizing key facts.
+                                                Defendant's chances are {(originalDefendantProb * 100).toFixed(1)}% (original) vs {(briefDefendantProb * 100).toFixed(1)}% (brief-based).
                                               </p>
                                             </div>
                                           )}

@@ -211,6 +211,21 @@ cd capstone1
 
 ### 2. Backend Setup
 
+**Option A: Using Conda (Recommended)**
+
+```bash
+# Navigate to backend directory
+cd backend
+
+# Activate your conda environment
+conda activate tf_clean
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+**Option B: Using Python venv**
+
 ```bash
 # Navigate to backend directory
 cd backend
@@ -306,8 +321,21 @@ NEXT_PUBLIC_API_URL=https://your-api-domain.com
 
 ### Starting the Backend
 
+**Using Conda:**
+
 ```bash
 cd backend
+conda activate tf_clean
+python main.py
+```
+
+**Using venv:**
+
+```bash
+cd backend
+source venv/bin/activate  # On macOS/Linux
+# OR
+venv\Scripts\activate      # On Windows
 python main.py
 ```
 
