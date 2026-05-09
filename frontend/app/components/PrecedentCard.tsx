@@ -1,19 +1,17 @@
 "use client"
 
 import { useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/app/components/ui/card"
 import { Badge } from "@/app/components/ui/badge"
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/app/components/ui/dialog"
 import { Button } from "@/app/components/ui/button"
 import { SimilarCase } from "@/lib/api"
-import { Download } from "lucide-react"
+import { Download, Building2, Calendar, Hash, ChevronRight } from "lucide-react"
 import jsPDF from "jspdf"
 
 interface PrecedentCardProps {
@@ -24,7 +22,6 @@ export function PrecedentCard({ case: caseData }: PrecedentCardProps) {
   const [open, setOpen] = useState(false)
   const similarityPercent = (caseData.similarity * 100).toFixed(1)
   const isWin = caseData.outcome === "win"
-  // Convert win/lose to legal judgment language for display
   const legalOutcome = isWin ? "Judgment in Favor of Defendant" : "Judgment Against Defendant"
 
   const handleDownload = () => {
@@ -33,212 +30,170 @@ export function PrecedentCard({ case: caseData }: PrecedentCardProps) {
     const pageHeight = doc.internal.pageSize.getHeight()
     const margin = 20
     const maxWidth = pageWidth - 2 * margin
-    let yPosition = margin
+    let y = margin
 
-    // Helper function to add text with word wrapping
-    const addWrappedText = (text: string, fontSize: number, isBold: boolean = false) => {
-      doc.setFontSize(fontSize)
-      if (isBold) {
-        doc.setFont(undefined, "bold")
-      } else {
-        doc.setFont(undefined, "normal")
-      }
-      
+    const addText = (text: string, size: number, bold = false) => {
+      doc.setFontSize(size)
+      doc.setFont("helvetica", bold ? "bold" : "normal")
       const lines = doc.splitTextToSize(text, maxWidth)
-      
       lines.forEach((line: string) => {
-        if (yPosition + fontSize > pageHeight - margin) {
-          doc.addPage()
-          yPosition = margin
-        }
-        doc.text(line, margin, yPosition)
-        yPosition += fontSize * 0.6
+        if (y + size > pageHeight - margin) { doc.addPage(); y = margin }
+        doc.text(line, margin, y)
+        y += size * 0.6
       })
-      
-      yPosition += fontSize * 0.2 // Add spacing after text
+      y += size * 0.2
     }
 
-    // Title
-    addWrappedText(caseData.case_name, 18, true)
-    yPosition += 5
+    addText(caseData.case_name, 18, true)
+    y += 4
+    addText(`Outcome: ${legalOutcome}`, 13, true)
+    if (caseData.original_outcome) addText(`Original Outcome: ${caseData.original_outcome}`, 11)
+    y += 4
 
-    // Outcome badges
-    addWrappedText(`Outcome: ${legalOutcome}`, 14, true)
-    if (caseData.original_outcome) {
-      addWrappedText(`Original Outcome: ${caseData.original_outcome}`, 12, false)
-    }
-    yPosition += 5
-
-    // Metadata section
-    doc.setFontSize(12)
-    doc.setFont(undefined, "bold")
-    doc.text("Case Information", margin, yPosition)
-    yPosition += 8
-
-    doc.setFont(undefined, "normal")
-    doc.setFontSize(10)
-    
-    const metadata = [
-      [`Similarity:`, `${similarityPercent}%`],
-      [`Court:`, caseData.court || "N/A"],
-      [`Date Filed:`, caseData.date_filed || "N/A"],
-      [`Docket ID:`, caseData.docket_id || "N/A"],
+    addText("Case Information", 12, true)
+    const meta: [string, string][] = [
+      ["Similarity:", `${similarityPercent}%`],
+      ["Court:", caseData.court ?? "N/A"],
+      ["Date Filed:", caseData.date_filed ?? "N/A"],
+      ["Docket ID:", caseData.docket_id ?? "N/A"],
     ]
-
-    metadata.forEach(([label, value]) => {
-      doc.setFont(undefined, "bold")
-      doc.text(label, margin, yPosition)
-      doc.setFont(undefined, "normal")
-      doc.text(value, margin + 40, yPosition)
-      yPosition += 7
-    })
-
-    yPosition += 5
-
-    // Full Text section
-    doc.setFontSize(12)
-    doc.setFont(undefined, "bold")
-    doc.text("Full Case Text", margin, yPosition)
-    yPosition += 8
-
-    // Add full text with proper wrapping
     doc.setFontSize(10)
-    doc.setFont(undefined, "normal")
-    const fullTextLines = doc.splitTextToSize(caseData.full_text, maxWidth)
-    
-    fullTextLines.forEach((line: string) => {
-      if (yPosition + 6 > pageHeight - margin) {
-        doc.addPage()
-        yPosition = margin
-      }
-      doc.text(line, margin, yPosition)
-      yPosition += 6
+    meta.forEach(([label, value]) => {
+      doc.setFont("helvetica", "bold"); doc.text(label, margin, y)
+      doc.setFont("helvetica", "normal"); doc.text(value, margin + 40, y)
+      y += 7
+    })
+    y += 4
+
+    addText("Full Case Text", 12, true)
+    doc.setFontSize(10); doc.setFont("helvetica", "normal")
+    doc.splitTextToSize(caseData.full_text, maxWidth).forEach((line: string) => {
+      if (y + 6 > pageHeight - margin) { doc.addPage(); y = margin }
+      doc.text(line, margin, y); y += 6
     })
 
-    // Save PDF
-    const fileName = `${caseData.case_name.replace(/[^a-z0-9]/gi, "_")}_case.pdf`
-    doc.save(fileName)
+    doc.save(`${caseData.case_name.replace(/[^a-z0-9]/gi, "_")}_case.pdf`)
   }
 
   return (
     <>
-      <Card 
-        className="cursor-pointer hover:shadow-md transition-shadow"
+      {/* ── Card ──────────────────────────────────────────────────── */}
+      <div
+        className="group bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer"
         onClick={() => setOpen(true)}
       >
-        <CardHeader>
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <CardTitle className="text-lg">{caseData.case_name}</CardTitle>
-              <CardDescription className="mt-1">
-                Similarity: {similarityPercent}%
-              </CardDescription>
+        {/* Top color band */}
+        <div className={`h-1.5 w-full ${isWin ? "bg-emerald-500" : "bg-rose-500"}`} />
+
+        <div className="p-5 space-y-4">
+          {/* Case name + outcome badge */}
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="font-semibold text-slate-900 text-sm leading-snug line-clamp-2 flex-1">
+              {caseData.case_name}
+            </h3>
+            <Badge
+              variant={isWin ? "default" : "destructive"}
+              className="shrink-0 text-xs"
+            >
+              {isWin ? "WIN" : "LOSE"}
+            </Badge>
+          </div>
+
+          {/* Original outcome label (shown only if present) */}
+          {caseData.original_outcome && (
+            <Badge variant="outline" className="text-xs font-normal">
+              {caseData.original_outcome}
+            </Badge>
+          )}
+
+          {/* Snippet */}
+          <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">
+            {caseData.snippet}
+          </p>
+
+          {/* Similarity bar */}
+          <div className="space-y-1.5">
+            <div className="flex justify-between text-xs text-slate-500">
+              <span>Similarity</span>
+              <span className="font-semibold text-slate-700">{similarityPercent}%</span>
             </div>
-            <div className="flex flex-col gap-1 items-end">
-              <div className="flex flex-col gap-1 items-end">
-                <Badge
-                  variant={isWin ? "default" : "destructive"}
-                  className="ml-2"
-                >
-                  {legalOutcome}
-                </Badge>
-                {caseData.original_outcome && (
-                  <Badge variant="outline" className="text-xs">
-                    {caseData.original_outcome}
-                  </Badge>
-                )}
-              </div>
-              {caseData.original_outcome && (
-                <Badge variant="outline" className="text-xs">
-                  {caseData.original_outcome}
-                </Badge>
+            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+              <div
+                className={`h-full rounded-full ${isWin ? "bg-emerald-400" : "bg-rose-400"}`}
+                style={{ width: `${similarityPercent}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-between pt-1">
+            <div className="flex items-center gap-3 text-xs text-slate-400">
+              {caseData.court && (
+                <span className="flex items-center gap-1">
+                  <Building2 className="h-3 w-3" />
+                  {caseData.court}
+                </span>
+              )}
+              {caseData.date_filed && (
+                <span className="flex items-center gap-1">
+                  <Calendar className="h-3 w-3" />
+                  {caseData.date_filed.slice(0, 4)}
+                </span>
               )}
             </div>
+            <span className="text-xs text-primary flex items-center gap-0.5 group-hover:underline">
+              View details <ChevronRight className="h-3 w-3" />
+            </span>
           </div>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <div>
-              <div className="text-sm font-medium mb-1">Snippet</div>
-              <p className="text-sm text-muted-foreground line-clamp-3">
-                {caseData.snippet}
-              </p>
-            </div>
-            <div className="flex items-center gap-2 pt-2">
-              <Badge variant="secondary">{similarityPercent}% match</Badge>
-              <span className="text-xs text-muted-foreground">Click to view full details</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
+      {/* ── Detail dialog ─────────────────────────────────────────── */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <div className="flex items-start justify-between">
+            <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
-                <DialogTitle className="text-2xl">{caseData.case_name}</DialogTitle>
-                <DialogDescription className="mt-2">
-                  Full case details and text
-                </DialogDescription>
-              </div>
-              <div className="flex flex-col gap-2 items-end">
-                <Badge
-                  variant={isWin ? "default" : "destructive"}
-                  className="text-lg px-4 py-2"
-                >
-                  {legalOutcome}
-                </Badge>
+                <DialogTitle className="text-xl leading-snug">{caseData.case_name}</DialogTitle>
                 {caseData.original_outcome && (
-                  <Badge variant="outline" className="text-sm">
+                  <Badge variant="outline" className="mt-2 text-xs font-normal">
                     {caseData.original_outcome}
                   </Badge>
                 )}
               </div>
+              <Badge
+                variant={isWin ? "default" : "destructive"}
+                className="shrink-0 text-sm px-3 py-1"
+              >
+                {legalOutcome}
+              </Badge>
             </div>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            {/* Case Metadata */}
-            <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-lg">
-              <div>
-                <div className="text-sm font-medium text-muted-foreground">Similarity</div>
-                <div className="text-lg font-semibold">{similarityPercent}%</div>
-              </div>
-              <div>
-                <div className="text-sm font-medium text-muted-foreground">Outcome</div>
-                <div className="text-lg font-semibold">{legalOutcome}</div>
-                {caseData.original_outcome && (
-                  <div className="text-sm text-muted-foreground mt-1">
-                    ({caseData.original_outcome})
-                  </div>
-                )}
-              </div>
-              {caseData.court && (
-                <div>
-                  <div className="text-sm font-medium text-muted-foreground">Court</div>
-                  <div className="text-lg font-semibold">{caseData.court}</div>
+          <div className="space-y-5 py-2">
+            {/* Metadata grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: "Similarity", value: `${similarityPercent}%`, icon: null },
+                { label: "Court", value: caseData.court ?? "N/A", icon: Building2 },
+                { label: "Date Filed", value: caseData.date_filed ?? "N/A", icon: Calendar },
+                { label: "Docket ID", value: caseData.docket_id ?? "N/A", icon: Hash },
+              ].map(({ label, value, icon: Icon }) => (
+                <div key={label} className="bg-slate-50 rounded-xl p-3">
+                  <p className="text-xs text-slate-400 mb-0.5 flex items-center gap-1">
+                    {Icon && <Icon className="h-3 w-3" />}
+                    {label}
+                  </p>
+                  <p className="text-sm font-semibold text-slate-800 truncate">{value}</p>
                 </div>
-              )}
-              {caseData.date_filed && (
-                <div>
-                  <div className="text-sm font-medium text-muted-foreground">Date Filed</div>
-                  <div className="text-lg font-semibold">{caseData.date_filed}</div>
-                </div>
-              )}
-              {caseData.docket_id && (
-                <div>
-                  <div className="text-sm font-medium text-muted-foreground">Docket ID</div>
-                  <div className="text-lg font-semibold">{caseData.docket_id}</div>
-                </div>
-              )}
+              ))}
             </div>
 
-            {/* Full Text */}
+            {/* Full text */}
             <div>
-              <div className="text-sm font-medium mb-2">Full Case Text</div>
-              <div className="p-4 bg-muted rounded-lg max-h-[400px] overflow-y-auto">
-                <p className="text-sm whitespace-pre-wrap leading-relaxed">
+              <p className="text-sm font-medium text-slate-700 mb-2">Full Case Text</p>
+              <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 max-h-80 overflow-y-auto">
+                <p className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed">
                   {caseData.full_text}
                 </p>
               </div>
@@ -246,11 +201,7 @@ export function PrecedentCard({ case: caseData }: PrecedentCardProps) {
           </div>
 
           <DialogFooter className="flex-row justify-between sm:justify-between">
-            <Button
-              variant="outline"
-              onClick={handleDownload}
-              className="flex items-center gap-2"
-            >
+            <Button variant="outline" onClick={handleDownload} className="flex items-center gap-2">
               <Download className="h-4 w-4" />
               Download Case
             </Button>

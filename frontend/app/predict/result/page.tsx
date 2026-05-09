@@ -612,10 +612,10 @@ export default function ResultPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading results...</p>
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+          <p className="text-slate-500 text-sm">Loading results…</p>
         </div>
       </div>
     );
@@ -623,14 +623,14 @@ export default function ResultPage() {
 
   if (error || !prediction) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12">
-        <div className="container mx-auto px-4">
+      <div className="min-h-screen bg-slate-50 py-12">
+        <div className="container mx-auto px-4 max-w-lg">
           <Card>
             <CardHeader>
-              <CardTitle>Error</CardTitle>
+              <CardTitle>Something went wrong</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-destructive">
+              <p className="text-destructive text-sm">
                 {error || "No prediction result found"}
               </p>
               <Link href="/predict" className="mt-4 inline-block">
@@ -644,20 +644,26 @@ export default function ResultPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12">
-      <div className="container mx-auto px-4 space-y-8">
-        <Link href="/predict">
-          <Button variant="ghost">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Prediction
-          </Button>
-        </Link>
+    <div className="min-h-screen bg-slate-50">
+      {/* Slim top nav */}
+      <div className="bg-white border-b border-slate-100 sticky top-0 z-10">
+        <div className="container mx-auto px-4 h-14 flex items-center">
+          <Link href="/predict">
+            <Button variant="ghost" size="sm" className="gap-1.5 text-slate-600 hover:text-slate-900">
+              <ArrowLeft className="h-4 w-4" />
+              New Prediction
+            </Button>
+          </Link>
+        </div>
+      </div>
+      <div className="container mx-auto px-4 py-10 space-y-8">
+        <span />
 
         {/* Error Display */}
         {error && (
-          <Card className="w-full max-w-4xl mx-auto border-destructive">
+          <Card className="w-full max-w-4xl mx-auto border-rose-200 bg-rose-50">
             <CardContent className="pt-6">
-              <p className="text-destructive">{error}</p>
+              <p className="text-rose-700 text-sm">{error}</p>
             </CardContent>
           </Card>
         )}
@@ -1469,9 +1475,9 @@ export default function ResultPage() {
             </CardContent>
           </Card>
 
-        <div className="text-center">
+        <div className="text-center pb-4">
           <Link href="/predict">
-            <Button size="lg">Make Another Prediction</Button>
+            <Button size="lg" className="px-10">Make Another Prediction</Button>
           </Link>
         </div>
       </div>
