@@ -163,6 +163,109 @@ Frontend runs at `http://localhost:3000`
 
 ---
 
+---
+
+## Deployment
+
+### Backend → Hugging Face Spaces (Docker)
+
+The backend is deployed as a Docker Space on Hugging Face. The `backend/Dockerfile`
+and `backend/.gitattributes` (Git LFS) are already configured.
+
+#### Prerequisites
+```bash
+# Install Git LFS (one-time)
+brew install git-lfs   # macOS
+# or: sudo apt install git-lfs  (Linux)
+```
+
+#### Steps
+
+**1. Create the Space**
+- Go to [huggingface.co/new-space](https://huggingface.co/new-space)
+- SDK: **Docker** | Hardware: **Free (CPU Basic)** | Visibility: **Public**
+
+**2. Get a HuggingFace access token**
+- Go to [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+- Create a **Fine-grained** token with **Write access to repos**
+
+**3. Clone the Space and push backend files**
+```bash
+# Clone into the project root (NOT inside backend/)
+cd /path/to/capstone1
+git clone https://huggingface.co/spaces/YOUR_USERNAME/YOUR_SPACE_NAME
+
+# Copy backend files into the Space folder
+cp -r backend/. YOUR_SPACE_NAME/
+
+# Rename the Space README card
+mv YOUR_SPACE_NAME/space_README.md YOUR_SPACE_NAME/README.md
+
+cd YOUR_SPACE_NAME
+
+# Authenticate with your token
+git remote set-url origin https://YOUR_USERNAME:YOUR_HF_TOKEN@huggingface.co/spaces/YOUR_USERNAME/YOUR_SPACE_NAME
+
+# Set up Git LFS and push
+git lfs install
+git lfs track "*.npy" "*.pkl" "models/*.csv" "data/*.csv"
+git add .
+git commit -m "Initial deployment"
+git push
+```
+
+**4. Set secrets in the Space**
+
+Go to your Space → **Settings → Variables and secrets** and add:
+
+| Secret name | Value |
+|---|---|
+| `OPENAI_API_KEY` | Your OpenAI API key |
+| `ALLOWED_ORIGINS` | Your frontend URL, e.g. `https://your-app.vercel.app` |
+
+HuggingFace will automatically build the Docker image and deploy. First build takes
+~10–15 minutes due to PyTorch. Your API will be live at:
+`https://YOUR_USERNAME-YOUR_SPACE_NAME.hf.space`
+
+---
+
+### Frontend → Vercel
+
+**1. Push frontend to GitHub** (if not already done)
+
+**2. Import project in Vercel**
+- Go to [vercel.com/new](https://vercel.com/new)
+- Import your GitHub repo
+- Set **Root Directory** to `frontend`
+- Framework preset: **Next.js** (auto-detected)
+
+**3. Add environment variable in Vercel**
+
+Go to your Vercel project → **Settings → Environment Variables**:
+
+| Variable | Value |
+|---|---|
+| `NEXT_PUBLIC_API_URL` | `https://YOUR_USERNAME-YOUR_SPACE_NAME.hf.space` |
+
+**4. Deploy** — Vercel deploys automatically on every push to `main`.
+
+---
+
+### Re-deploying after changes
+
+**Backend update:**
+```bash
+cd YOUR_SPACE_NAME
+cp -r /path/to/capstone1/backend/. .
+git add .
+git commit -m "Update backend"
+git push
+```
+
+**Frontend update:** Push to GitHub — Vercel redeploys automatically.
+
+---
+
 ## Next Steps
 
 - Read [README.md](README.md) for full usage instructions

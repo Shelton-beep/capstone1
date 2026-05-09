@@ -1,0 +1,13 @@
+# Git LFS tracking for large model and data files
+# Files >10 MB are stored in LFS to keep the repo lightweight
+
+# NumPy arrays (embeddings — 53 MB)
+*.npy filter=lfs diff=lfs merge=lfs -text
+
+# Pickle files (trained models)
+*.pkl filter=lfs diff=lfs merge=lfs -text
+
+# Large CSV datasets
+models/clean_dataset.csv filter=lfs diff=lfs merge=lfs -text
+data/courtlistener_dockets_partial.csv filter=lfs diff=lfs merge=lfs -text
+data/opinions_checkpoint.csv filter=lfs diff=lfs merge=lfs -text
