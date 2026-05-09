@@ -1,5 +1,10 @@
 """
-Similar cases router for precedent search using cosine similarity.
+Similar cases router for precedent search.
+
+Retrieval pipeline:
+  query text  ──► BM25 keyword ranking ─┐
+                                         ├─► RRF fusion ──► GPT reranker ──► top-k
+  query embed ──► cosine similarity ────┘
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -10,6 +15,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from utils.embedding import encode_text
 from utils.model_loader import load_embeddings, load_dataset
 from utils.input_validation import is_valid_legal_text
+from utils.hybrid_retrieval import hybrid_search, rerank_with_gpt
 
 router = APIRouter(prefix="/api/similar", tags=["similar"])
 
@@ -91,47 +97,52 @@ async def find_similar_cases(request: SimilarRequest):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to load dataset: {str(e)}")
         
-        # Compute cosine similarity with error handling
+        # Compute cosine similarity scores (used for display + hybrid fusion)
         try:
             similarities = cosine_similarity(query_array, embeddings)[0]
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Similarity computation failed: {str(e)}")
-        
-        # Get top K indices based on request parameter (default 5, max 10)
-        # Ensure we get exactly the requested number (or as many as available)
+
         requested_k = request.top_k if request.top_k is not None else 5
-        # Cap at 10 max, but also ensure we don't exceed available similarities
         top_k = min(requested_k, len(similarities), 10)
-        top_indices = np.argsort(similarities)[::-1][:top_k]
-        
-        # Debug logging
-        print(f"Requested {requested_k} precedents, returning {top_k} (available: {len(similarities)})")
-        
-        # Build response with error handling
-        similar_cases = []
+
+        # ── Hybrid retrieval: BM25 + cosine → RRF ────────────────────────────
+        # Fetch a 3× candidate pool so the GPT reranker has room to reorder.
+        candidate_pool = min(top_k * 3, len(similarities))
         try:
-            for idx in top_indices:
+            hybrid_results = hybrid_search(
+                query_text=query_text,
+                cosine_scores=similarities,
+                dataset=dataset,
+                top_k=candidate_pool,
+            )
+            candidate_indices = [idx for idx, _ in hybrid_results]
+        except Exception as e:
+            # Graceful fallback: pure cosine ranking
+            print(f"Hybrid search failed ({e}); falling back to cosine similarity.")
+            candidate_indices = list(np.argsort(similarities)[::-1][:candidate_pool])
+
+        print(f"Hybrid retrieval: {len(candidate_indices)} candidates → reranking to {top_k}")
+
+        # ── Build candidate dicts (plain dicts needed by the reranker) ─────────
+        candidate_cases: List[dict] = []
+        try:
+            for idx in candidate_indices:
                 row = dataset.iloc[idx]
                 clean_text = row.get('clean_text', '')
-                # Extract snippet (first 300 characters)
                 snippet = clean_text[:300] + '...' if len(clean_text) > 300 else clean_text
-                
-                # Get case name - try case_name_y first, then case_name_x, then case_name
+
                 case_name = (
-                    row.get('case_name_y') or 
-                    row.get('case_name_x') or 
-                    row.get('case_name') or 
+                    row.get('case_name_y') or
+                    row.get('case_name_x') or
+                    row.get('case_name') or
                     'Unknown'
                 )
-                # Convert to string and handle NaN
                 if pd.isna(case_name):
                     case_name = 'Unknown'
                 else:
-                    case_name = str(case_name).strip()
-                    if not case_name:
-                        case_name = 'Unknown'
-                
-                # Get outcome (win/lose)
+                    case_name = str(case_name).strip() or 'Unknown'
+
                 outcome = row.get('winlose', 'unknown')
                 if pd.isna(outcome) or not outcome:
                     outcome = 'unknown'
@@ -139,62 +150,65 @@ async def find_similar_cases(request: SimilarRequest):
                     outcome = str(outcome).strip().lower()
                     if outcome not in ['win', 'lose']:
                         outcome = 'unknown'
-                
-                # Get original outcome label (e.g., REVERSED, GRANTED, AFFIRMED)
+
                 original_outcome = row.get('outcome')
                 if pd.isna(original_outcome) or not original_outcome:
                     original_outcome = None
                 else:
-                    original_outcome = str(original_outcome).strip()
-                    if not original_outcome:
-                        original_outcome = None
-                
-                # Get full text
-                full_text = clean_text
-                
-                # Get additional metadata
+                    original_outcome = str(original_outcome).strip() or None
+
                 court = row.get('court_y') or row.get('court_x')
                 if pd.isna(court):
                     court = None
                 else:
                     court = str(court).strip()
-                    # Extract court name from URL if it's a URL
-                    if court and 'courtlistener.com' in court:
-                        # Try to extract court identifier
-                        if '/courts/' in court:
-                            court = court.split('/courts/')[-1].rstrip('/')
-                
+                    if court and 'courtlistener.com' in court and '/courts/' in court:
+                        court = court.split('/courts/')[-1].rstrip('/')
+
                 date_filed = row.get('date_filed')
-                if pd.isna(date_filed):
-                    date_filed = None
-                else:
-                    date_filed = str(date_filed)
-                
+                date_filed = None if pd.isna(date_filed) else str(date_filed)
+
                 docket_id = row.get('docket_id')
-                if pd.isna(docket_id):
-                    docket_id = None
-                else:
-                    docket_id = str(docket_id)
-                
-                case = SimilarCase(
-                    case_name=case_name,
-                    snippet=snippet,
-                    similarity=float(similarities[idx]),
-                    outcome=outcome,
-                    original_outcome=original_outcome,
-                    full_text=full_text,
-                    court=court,
-                    date_filed=date_filed,
-                    docket_id=docket_id
-                )
-                similar_cases.append(case)
+                docket_id = None if pd.isna(docket_id) else str(docket_id)
+
+                candidate_cases.append({
+                    "case_name": case_name,
+                    "snippet": snippet,
+                    "similarity": float(similarities[idx]),  # cosine score for display
+                    "outcome": outcome,
+                    "original_outcome": original_outcome,
+                    "full_text": clean_text,
+                    "court": court,
+                    "date_filed": date_filed,
+                    "docket_id": docket_id,
+                })
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to format results: {str(e)}")
-        
-        # Verify we're returning the requested number (or as many as available)
-        actual_count = len(similar_cases)
-        print(f"Returning {actual_count} precedents (requested {requested_k})")
-        
+
+        # ── GPT reranker: pick the most legally relevant top_k ────────────────
+        try:
+            final_cases = rerank_with_gpt(query_text, candidate_cases, top_k=top_k)
+        except Exception as e:
+            print(f"Reranker failed ({e}); using hybrid order.")
+            final_cases = candidate_cases[:top_k]
+
+        # ── Convert to Pydantic response models ───────────────────────────────
+        similar_cases = [
+            SimilarCase(
+                case_name=c["case_name"],
+                snippet=c["snippet"],
+                similarity=c["similarity"],
+                outcome=c["outcome"],
+                original_outcome=c["original_outcome"],
+                full_text=c["full_text"],
+                court=c["court"],
+                date_filed=c["date_filed"],
+                docket_id=c["docket_id"],
+            )
+            for c in final_cases
+        ]
+
+        print(f"Returning {len(similar_cases)} precedents (requested {requested_k})")
         return SimilarResponse(similar_cases=similar_cases)
     except HTTPException:
         raise

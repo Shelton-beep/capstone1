@@ -70,7 +70,10 @@ The **Legal Appeal Outcome Prediction System** is a comprehensive, production-re
 
 ### 3. **Similar Precedent Discovery**
 
-- Find similar appeal cases using cosine similarity on LegalBERT embeddings
+- **Hybrid retrieval pipeline**: BM25 keyword search + LegalBERT vector search fused via Reciprocal Rank Fusion (RRF)
+- BM25 surfaces exact statute citations, procedural keywords, and outcome signals that embeddings underweight
+- LegalBERT captures semantic similarity between legally analogous arguments
+- Optional GPT-4o-mini reranker selects the most legally decisive precedents from the fused candidate pool
 - Searchable by full text or extracted facts
 - Configurable number of precedents (1-10)
 - Displays original outcome labels (REVERSED, GRANTED, AFFIRMED, etc.)
@@ -166,7 +169,11 @@ The **Legal Appeal Outcome Prediction System** is a comprehensive, production-re
   - scikit-learn (MLP Classifier, preprocessing)
   - PyTorch 2.1.0
   - Transformers 4.35.0
-- **AI/LLM**: OpenAI GPT-4o-mini (for explanations, fact extraction, brief generation)
+- **Hybrid Retrieval**:
+  - BM25 (`rank-bm25`) for keyword/statute matching
+  - Reciprocal Rank Fusion (RRF) to merge BM25 + vector rankings
+  - GPT-4o-mini reranker for final legal relevance scoring (optional)
+- **AI/LLM**: OpenAI GPT-4o-mini (for explanations, fact extraction, brief generation, reranking)
 - **Data Processing**: pandas, numpy
 - **API**: Pydantic (validation), uvicorn (ASGI server)
 - **Environment**: python-dotenv
@@ -512,10 +519,11 @@ capstone1/
 │   ├── utils/                         # Utility modules
 │   │   ├── embedding.py               # LegalBERT embedding utilities
 │   │   ├── model_loader.py            # Model loading & prediction
+│   │   ├── hybrid_retrieval.py        # BM25 + RRF + GPT reranker
 │   │   ├── fact_extraction.py         # GPT-based fact extraction
 │   │   ├── legal_judgment.py          # Legal judgment language conversion
 │   │   ├── explanation.py             # GPT-based explanation generation
-│   │   ├── feature_importance.py       # Feature importance extraction
+│   │   ├── feature_importance.py      # Feature importance extraction
 │   │   └── rag_index.py               # RAG document indexing
 │   ├── rag_docs/                      # RAG documentation
 │   │   ├── explanation_guide.md
