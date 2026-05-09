@@ -1,10 +1,22 @@
 """
 Embedding utilities for legal text using LegalBERT with GPU fallback.
 """
+import logging
+import warnings
+
 from sentence_transformers import SentenceTransformer
 from pathlib import Path
 import os
 import torch
+
+# nlpaueb/legal-bert-base-uncased is a plain HuggingFace BERT model, not a
+# native sentence-transformers checkpoint, so the library always logs
+# "Creating a new one with mean pooling." on load — silence that noise.
+logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
+warnings.filterwarnings(
+    "ignore",
+    message=".*No sentence-transformers model found.*",
+)
 
 # Global model instance (lazy loading)
 _model = None
