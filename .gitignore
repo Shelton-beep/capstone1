@@ -24,13 +24,13 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# Virtual Environments
+# Virtual Environments (uv creates .venv automatically — keep out of git)
 venv/
 env/
 ENV/
 env.bak/
 venv.bak/
-.venv
+.venv/
 
 # Environment variables
 .env

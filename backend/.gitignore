@@ -5,11 +5,11 @@ __pycache__/
 *.so
 .Python
 
-# Virtual Environment
+# Virtual Environment (uv creates .venv automatically)
 venv/
 env/
 ENV/
-.venv
+.venv/
 
 # Environment variables
 .env

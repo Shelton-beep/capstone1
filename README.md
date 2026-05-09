@@ -4,7 +4,8 @@
 
 **An AI-powered system for predicting appeal case outcomes and generating compelling legal briefs**
 
-[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
+[![uv](https://img.shields.io/badge/uv-package%20manager-DE5FE9.svg)](https://docs.astral.sh/uv/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-14.0-black.svg)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
@@ -192,11 +193,11 @@ The **Legal Appeal Outcome Prediction System** is a comprehensive, production-re
 
 ## 📦 Prerequisites
 
-- **Python**: 3.8 or higher
+- **Python**: 3.10 or higher
+- **uv**: Python package manager — [install guide](https://docs.astral.sh/uv/getting-started/installation/)
 - **Node.js**: 18.0 or higher
-- **npm** or **yarn**
+- **npm**
 - **OpenAI API Key** (optional, for GPT features)
-- **Jupyter** (for model training)
 
 ---
 
@@ -211,45 +212,26 @@ cd capstone1
 
 ### 2. Backend Setup
 
-**Option A: Using Conda (Recommended)**
-
 ```bash
 # Navigate to backend directory
 cd backend
 
-# Activate your conda environment
-conda activate tf_clean
-
-# Install dependencies
-pip install -r requirements.txt
+# Install all dependencies and create virtual environment
+uv sync --dev
 ```
 
-**Option B: Using Python venv**
-
-```bash
-# Navigate to backend directory
-cd backend
-
-# Create virtual environment (recommended)
-python -m venv venv
-
-# Activate virtual environment
-# On macOS/Linux:
-source venv/bin/activate
-# On Windows:
-venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
+> `uv sync` reads `pyproject.toml` + `uv.lock`, auto-installs the correct Python
+> version, and creates `.venv` — no separate `pip install` step required.
 
 ### 3. Model Training
 
 Before running predictions, you need to train the model:
 
 ```bash
-# Start Jupyter
-jupyter notebook
+cd backend
+
+# Launch Jupyter (installed as a dev dependency)
+uv run jupyter notebook
 
 # Open and run: notebooks/train_model.ipynb
 # This will generate:
@@ -321,22 +303,9 @@ NEXT_PUBLIC_API_URL=https://your-api-domain.com
 
 ### Starting the Backend
 
-**Using Conda:**
-
 ```bash
 cd backend
-conda activate tf_clean
-python main.py
-```
-
-**Using venv:**
-
-```bash
-cd backend
-source venv/bin/activate  # On macOS/Linux
-# OR
-venv\Scripts\activate      # On Windows
-python main.py
+uv run python main.py
 ```
 
 The API will be available at `http://localhost:8000`
@@ -555,7 +524,10 @@ capstone1/
 │   │   ├── system_limitations.md
 │   │   └── CHANGELOG.md
 │   ├── main.py                        # FastAPI application entry point
-│   ├── requirements.txt               # Python dependencies
+│   ├── pyproject.toml                 # Project metadata & dependencies (uv)
+│   ├── uv.lock                        # Pinned dependency lockfile (uv)
+│   ├── .python-version                # Python version pin for uv
+│   ├── requirements.txt               # Legacy pip reference (do not use)
 │   └── .env                           # Environment variables (create this)
 │
 └── frontend/
@@ -614,7 +586,7 @@ The model training process is documented in `backend/notebooks/train_model.ipynb
 
 ```bash
 cd backend
-jupyter notebook notebooks/train_model.ipynb
+uv run jupyter notebook notebooks/train_model.ipynb
 # Run all cells
 ```
 
@@ -626,8 +598,8 @@ jupyter notebook notebooks/train_model.ipynb
 
 ```bash
 cd backend
-source venv/bin/activate  # Activate virtual environment
-python main.py            # Run development server
+uv sync --dev             # Install / sync all dependencies
+uv run python main.py     # Run development server
 ```
 
 **Code Structure:**
@@ -668,7 +640,7 @@ npm run lint             # Lint code
 1. **Production Server**:
 
    ```bash
-   uvicorn main:app --host 0.0.0.0 --port 8000
+   uv run uvicorn main:app --host 0.0.0.0 --port 8000
    ```
 
 2. **Environment Variables**: Set `OPENAI_API_KEY` in production environment
@@ -693,12 +665,13 @@ Create `Dockerfile` for containerized deployment:
 
 ```dockerfile
 # Backend Dockerfile
-FROM python:3.9-slim
+FROM python:3.10-slim
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /app
-COPY backend/requirements.txt .
-RUN pip install -r requirements.txt
+COPY backend/pyproject.toml backend/uv.lock ./
+RUN uv sync --no-dev --frozen
 COPY backend/ .
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
 ---
